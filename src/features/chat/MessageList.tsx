@@ -2,6 +2,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { ArrowDown, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/Button"
 import { MarkdownText } from "@/features/chat/MarkdownText"
+import { HoverImage } from "@/features/preview/HoverImage"
 import { t } from "@/i18n"
 import { imageSrc } from "@/lib/files"
 import type { UiMessage } from "@/lib/types"
@@ -81,28 +82,17 @@ export function MessageList({
     return () => observer.disconnect()
   }, [ready])
 
-  const userMoved = useRef(false)
-
-  function rememberUserScroll() {
-    userMoved.current = true
-  }
-
   function onScroll() {
     if (locking.current) return
     const parent = parentRef.current
     if (!parent) return
     const gap = parent.scrollHeight - parent.scrollTop - parent.clientHeight
-    if (userMoved.current) {
-      userMoved.current = false
-      const nextAway = gap > 48
-      pinnedRef.current = !nextAway
-      if (nextAway !== awayRef.current) {
-        awayRef.current = nextAway
-        setAway(nextAway)
-      }
-      return
+    pinnedRef.current = gap <= 1
+    const nextAway = gap > 48
+    if (nextAway !== awayRef.current) {
+      awayRef.current = nextAway
+      setAway(nextAway)
     }
-    if (pinnedRef.current && gap > 1) scrollToEnd()
   }
 
   return (
@@ -110,16 +100,13 @@ export function MessageList({
       <div
         ref={parentRef}
         onScroll={onScroll}
-        onWheel={rememberUserScroll}
-        onTouchMove={rememberUserScroll}
-        onKeyDown={(event) => {
-          if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) rememberUserScroll()
-        }}
-        onPointerDown={(event) => {
+        onWheel={(event) => {
           const parent = parentRef.current
-          if (!parent || event.target !== parent) return
-          const point = event.nativeEvent
-          if (point.offsetX > parent.clientWidth || point.offsetY > parent.clientHeight) rememberUserScroll()
+          if (!parent || event.deltaY >= 0 || parent.scrollTop <= 0) return
+          pinnedRef.current = false
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home") pinnedRef.current = false
         }}
         className="h-full overflow-y-auto px-6 py-5"
         style={{ overflowAnchor: "none" }}
@@ -201,12 +188,23 @@ const MessageBubble = memo(function MessageBubble({
       {message.images.length > 0 ? (
         <div className={`mt-3 grid w-full gap-2 ${message.images.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
           {message.images.map((path, index) => (
-            <ChatImage
-              key={path}
-              path={path}
-              alt={message.role === "user" ? t("attachedImage") : t("generatedImage")}
-              onClick={() => onPreview(message.images, index)}
-            />
+            message.role === "user" ? (
+              <ChatImage
+                key={path}
+                path={path}
+                alt={t("attachedImage")}
+                onClick={() => onPreview(message.images, index)}
+              />
+            ) : (
+              <HoverImage
+                key={path}
+                path={path}
+                alt={t("generatedImage")}
+                frameClassName="relative w-full overflow-hidden rounded-2xl"
+                imgClassName="image-reveal block h-auto w-full"
+                onPreview={() => onPreview(message.images, index)}
+              />
+            )
           ))}
         </div>
       ) : null}

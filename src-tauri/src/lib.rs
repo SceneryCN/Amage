@@ -20,6 +20,7 @@ pub struct AppState {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let db_path = app
                 .path()
@@ -74,6 +75,7 @@ pub fn run() {
             commands::retry_message,
             commands::cancel_generation,
             commands::list_gallery,
+            commands::export_image,
             commands::storage_usage,
             commands::save_storage,
         ])

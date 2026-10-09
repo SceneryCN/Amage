@@ -112,6 +112,52 @@ textarea:focus-visible {
   animation: image-reveal 0.7s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.image-actions {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+
+.image-frame:hover .image-actions,
+.image-frame:focus-within .image-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.image-action {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 999px;
+  color: #fff;
+}
+
+.image-action:hover,
+.image-action:focus-visible {
+  background: rgba(255, 255, 255, 0.18);
+  outline: none;
+}
+
+.image-action:disabled {
+  opacity: 0.45;
+}
+
+@media (hover: none) {
+  .image-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 ::selection {
   background: rgba(227, 154, 85, 0.35);
 }

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type UIEvent } from "react"
 import { ArrowLeft, Images, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/Button"
+import { HoverImage } from "@/features/preview/HoverImage"
 import { ImagePreview } from "@/features/preview/ImagePreview"
 import { t } from "@/i18n"
 import { api, onChat } from "@/lib/api"
-import { imageSrc } from "@/lib/files"
 import { formatTime } from "@/lib/format"
 import { errorText } from "@/lib/platform"
 import type { GalleryImage } from "@/lib/types"
@@ -72,7 +72,6 @@ export function GalleryView({ onClose }: { onClose: () => void }) {
   const [width, setWidth] = useState(0)
   const [viewport, setViewport] = useState(0)
   const [scrollTop, setScrollTop] = useState(0)
-  const [failed, setFailed] = useState<Set<string>>(() => new Set())
   const [preview, setPreview] = useState<number | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
@@ -168,29 +167,17 @@ export function GalleryView({ onClose }: { onClose: () => void }) {
         <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-5 py-5" onScroll={onScroll}>
           <div className="relative" style={{ height: packed.height }}>
             {visible.map((card) => (
-              <button
+              <HoverImage
                 key={card.item.id}
-                type="button"
-                className="group absolute overflow-hidden rounded-[22px] bg-white/5 shadow-[0_16px_40px_rgba(0,0,0,0.22)] transition duration-300 hover:-translate-y-0.5 hover:brightness-110"
+                path={card.item.path}
+                alt={t("generatedImage")}
+                frameClassName="group absolute overflow-hidden rounded-[22px] bg-white/5 shadow-[0_16px_40px_rgba(0,0,0,0.22)] transition duration-300 hover:-translate-y-0.5 hover:brightness-110"
+                imgClassName="h-full w-full object-cover"
                 style={{ top: card.top, left: card.column * (card.width + GAP), width: card.width, height: card.height }}
-                onClick={() => setPreview(items.findIndex((item) => item.id === card.item.id))}
-              >
-                {failed.has(card.item.id) ? (
-                  <span className="grid h-full place-items-center px-3 text-xs text-foam/60">{t("imageFailed")}</span>
-                ) : (
-                  <img
-                    src={imageSrc(card.item.path)}
-                    alt={t("generatedImage")}
-                    loading="lazy"
-                    decoding="async"
-                    className="h-full w-full object-cover"
-                    onError={() => setFailed((current) => new Set(current).add(card.item.id))}
-                  />
-                )}
-                <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-ink/80 to-transparent px-3 py-2 text-left text-xs text-foam/80 opacity-0 transition group-hover:opacity-100">
-                  {formatTime(card.item.createdAt)}
-                </span>
-              </button>
+                caption={formatTime(card.item.createdAt)}
+                loading="lazy"
+                onPreview={() => setPreview(items.findIndex((item) => item.id === card.item.id))}
+              />
             ))}
           </div>
         </div>

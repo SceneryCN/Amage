@@ -1,3 +1,4 @@
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
@@ -362,6 +363,75 @@ pub fn storage_usage(state: State<AppState>) -> Result<db::StorageUsage, String>
 pub struct SaveStorage {
     cache_limit_gb: i64,
     history_retention: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportImage {
+    source: String,
+    destination: String,
+}
+
+#[tauri::command]
+pub fn export_image(app: AppHandle, input: ExportImage) -> Result<(), String> {
+    let destination = std::path::PathBuf::from(input.destination.trim());
+    let parent = destination.parent().filter(|path| !path.as_os_str().is_empty());
+    let Some(parent) = parent else {
+        return Err("先选择保存位置".into());
+    };
+    if !parent.exists() {
+        return Err("保存位置不存在".into());
+    }
+    if destination.exists() && !destination.is_file() {
+        return Err("保存位置不是文件".into());
+    }
+    if input.source.starts_with("data:") {
+        let bytes = decode_data_url(&input.source)?;
+        return std::fs::write(&destination, bytes).map_err(|err| format!("保存图片失败：{err}"));
+    }
+    let root = chat::images_dir(&app)?.canonicalize().map_err(|err| err.to_string())?;
+    let source = std::path::PathBuf::from(&input.source)
+        .canonicalize()
+        .map_err(|_| "找不到这张图片".to_string())?;
+    if !source.starts_with(&root) || !source.is_file() {
+        return Err("只能保存应用里的图片".into());
+    }
+    if destination.canonicalize().ok().as_ref() == Some(&source) {
+        return Ok(());
+    }
+    std::fs::copy(&source, &destination).map(|_| ()).map_err(|err| format!("保存图片失败：{err}"))
+}
+
+fn decode_data_url(value: &str) -> Result<Vec<u8>, String> {
+    let rest = value.strip_prefix("data:").ok_or("图片数据不完整")?;
+    let (meta, data) = rest.split_once(',').ok_or("图片数据不完整")?;
+    let bytes = if meta.contains(";base64") {
+        base64::engine::general_purpose::STANDARD.decode(data.trim())
+            .map_err(|_| "图片数据不完整".to_string())?
+    } else {
+        percent_decode(data)?
+    };
+    if bytes.len() > 32 * 1024 * 1024 {
+        return Err("图片太大了".into());
+    }
+    Ok(bytes)
+}
+
+fn percent_decode(input: &str) -> Result<Vec<u8>, String> {
+    let raw = input.as_bytes();
+    let mut out = Vec::with_capacity(raw.len());
+    let mut index = 0;
+    while index < raw.len() {
+        if raw[index] == b'%' && index + 2 < raw.len() {
+            let hex = std::str::from_utf8(&raw[index + 1..index + 3]).map_err(|_| "图片数据不完整".to_string())?;
+            out.push(u8::from_str_radix(hex, 16).map_err(|_| "图片数据不完整".to_string())?);
+            index += 3;
+            continue;
+        }
+        out.push(if raw[index] == b'+' { b' ' } else { raw[index] });
+        index += 1;
+    }
+    Ok(out)
 }
 
 #[tauri::command]

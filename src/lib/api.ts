@@ -46,6 +46,7 @@ export const api = {
   retryMessage: (conversationId: string) => call<SendStarted>("retry_message", { conversationId }),
   cancelGeneration: (conversationId: string) => call<void>("cancel_generation", { conversationId }),
   listGallery: () => call<GalleryImage[]>("list_gallery"),
+  exportImage: (source: string, destination: string) => call<void>("export_image", { input: { source, destination } }),
   storageUsage: () => call<StorageUsage>("storage_usage"),
   saveStorage: (input: { cacheLimitGb: number; historyRetention: HistoryRetention }) => call<Settings>("save_storage", { input }),
 }

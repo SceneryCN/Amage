@@ -785,7 +785,7 @@ fn sniff_extension(bytes: &[u8], fallback: &str) -> String {
     }
 }
 
-fn images_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn images_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
         .app_data_dir()
