@@ -16,12 +16,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # macOS 签名在 src-tauri/tauri.macos.conf.json，用 ad-hoc identity "-"。
           - platform: macos-latest
             rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
-            args: '--target aarch64-apple-darwin --config {"bundle":{"macOS":{"signingIdentity":"-"}}}'
+            args: "--target aarch64-apple-darwin"
           - platform: macos-latest
             rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
-            args: '--target x86_64-apple-darwin --config {"bundle":{"macOS":{"signingIdentity":"-"}}}'
+            args: "--target x86_64-apple-darwin"
           - platform: windows-latest
             rust_targets: x86_64-pc-windows-msvc
             args: "--target x86_64-pc-windows-msvc"
