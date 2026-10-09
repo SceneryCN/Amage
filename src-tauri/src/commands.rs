@@ -62,7 +62,7 @@ async fn fetch_models(http: &reqwest::Client, input: &ConnectionInput) -> Result
     let response = http
         .get(format!("{base}/models"))
         .bearer_auth(input.api_key.trim())
-        .header("user-agent", "Amage/0.1")
+        .header("user-agent", "Amage/1.0")
         .send()
         .await
         .map_err(|err| format!("连不上这个地址：{err}"))?;

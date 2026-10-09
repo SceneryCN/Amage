@@ -206,7 +206,7 @@ async fn connect_session(config: &McpServerDto, http: reqwest::Client) -> Result
             json!({
                 "protocolVersion": "2024-11-05",
                 "capabilities": { "tools": {} },
-                "clientInfo": { "name": "Amage", "version": "0.1.0" }
+                "clientInfo": { "name": "Amage", "version": "1.0.0" }
             }),
         )
         .await

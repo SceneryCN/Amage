@@ -648,7 +648,7 @@ async fn request_image(
     let response = http
         .post(url)
         .bearer_auth(key)
-        .header("user-agent", "Amage/0.1")
+        .header("user-agent", "Amage/1.0")
         .json(&json!({
             "model": model,
             "prompt": prompt,
@@ -695,7 +695,7 @@ async fn request_edit(
     let response = http
         .post(format!("{base}/images/edits"))
         .bearer_auth(key)
-        .header("user-agent", "Amage/0.1")
+        .header("user-agent", "Amage/1.0")
         .multipart(form)
         .send()
         .await
@@ -902,7 +902,7 @@ async fn stream_chat(
         let request = http
             .post(format!("{base}/{path}"))
             .bearer_auth(key)
-            .header("user-agent", "Amage/0.1")
+            .header("user-agent", "Amage/1.0")
             .json(&body)
             .send();
         let response = tokio::select! {
