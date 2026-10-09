@@ -1,3 +1,4 @@
+import wiglockSkill from "@/content/wiglock-pro.md?raw"
 import type { ChatEvent, ConnectionResult, Conversation, GalleryImage, HistoryRetention, McpServer, McpStatus, Message, Prompt, SendInput, SendStarted, Settings, SettingsInput, Skill, StorageUsage } from "@/lib/types"
 
 const SETTINGS_KEY = "amage-mock-settings"
@@ -47,7 +48,13 @@ function readSettings(): Settings {
 export class MockStore {
   private settings = readSettings()
   private prompts: Prompt[] = [defaultPrompt]
-  private skills: Skill[] = []
+  private skills: Skill[] = [{
+    id: "wiglock-pro",
+    name: "WigLock Pro",
+    content: wiglockSkill.trim(),
+    enabled: true,
+    createdAt: 1,
+  }]
   private servers: McpServer[] = []
   private statuses = new Map<string, McpStatus>()
   private conversations: Conversation[] = []
@@ -134,6 +141,9 @@ export class MockStore {
     this.skills = [...this.skills, skill]
     return skill
   }
+  updateSkill(skillId: string, name: string, content: string) {
+    this.skills = this.skills.map((item) => item.id === skillId ? { ...item, name, content } : item)
+  }
   setSkillEnabled(skillId: string, enabled: boolean) {
     this.skills = this.skills.map((item) => item.id === skillId ? { ...item, enabled } : item)
   }
@@ -199,6 +209,7 @@ export class MockStore {
     }
     const content = input.content.trim()
     if (!content && input.attachments.length === 0) throw new Error("写点什么，或附上一张图")
+    if (input.attachments.length > 8) throw new Error("一次最多八张图片")
     const conversationId = input.conversationId ?? id()
     if (!input.conversationId) {
       const title = content.slice(0, 28) || "图片对话"

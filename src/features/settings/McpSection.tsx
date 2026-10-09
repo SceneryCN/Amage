@@ -6,6 +6,7 @@ import { SettingsBlock, SettingsStack } from "@/features/settings/SettingsBlock"
 import { t } from "@/i18n"
 import { api } from "@/lib/api"
 import { errorText } from "@/lib/platform"
+import { toast } from "@/lib/toast"
 import type { McpServer, McpStatus } from "@/lib/types"
 
 export function McpSection() {
@@ -102,6 +103,7 @@ export function McpSection() {
           }).then(() => {
             setFormKey((value) => value + 1)
             setFormError(null)
+            toast(t("saved"))
             load()
           }).catch((reason) => setFormError(errorText(reason, t("actionFailed"))))
         }}

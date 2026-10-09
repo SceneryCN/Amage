@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 const DEFAULT_PROMPT: &str = "你是 Amage，驻留在这台电脑上的对话与图像助手。用用户正在使用的语言回答，默认中文。需要外部资料或本机能力时，调用已经连接的工具。不要编造工具没有返回的结果。";
+const WIGLOCK_SKILL: &str = include_str!("../../src/content/wiglock-pro.md");
 
 pub fn now_ms() -> i64 {
     SystemTime::now()
@@ -107,6 +108,17 @@ fn seed(conn: &Connection) -> Result<(), String> {
     }
     if get_setting(conn, "history_retention")?.is_none() {
         set_setting(conn, "history_retention", "never")?;
+    }
+    if get_setting(conn, "seeded_skill_wiglock")?.as_deref() != Some("3") {
+        let exists: i64 = conn
+            .query_row("SELECT COUNT(*) FROM skills WHERE id = 'wiglock-pro'", [], |row| row.get(0))
+            .map_err(|e| e.to_string())?;
+        if exists == 0 {
+            create_skill(conn, "wiglock-pro", "WigLock Pro", WIGLOCK_SKILL.trim())?;
+        } else {
+            update_skill(conn, "wiglock-pro", "WigLock Pro", WIGLOCK_SKILL.trim())?;
+        }
+        set_setting(conn, "seeded_skill_wiglock", "3")?;
     }
     Ok(())
 }
@@ -447,6 +459,19 @@ pub fn enabled_skills(conn: &Connection) -> Result<Vec<(String, String)>, String
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
         .map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+pub fn update_skill(conn: &Connection, id: &str, name: &str, content: &str) -> Result<(), String> {
+    let changed = conn
+        .execute(
+            "UPDATE skills SET name = ?1, content = ?2 WHERE id = ?3",
+            params![name, content, id],
+        )
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("没有找到这个技能".into());
+    }
+    Ok(())
 }
 
 pub fn create_skill(conn: &Connection, id: &str, name: &str, content: &str) -> Result<SkillDto, String> {

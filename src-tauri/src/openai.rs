@@ -348,15 +348,19 @@ pub fn tool_definitions(image_ready: bool, extra: Vec<Value>) -> Vec<Value> {
                 "type": "function",
                 "function": {
                     "name": "generate_image",
-                    "description": "根据文字描述生成一张图片。用户想要画面、海报、插画、照片或任何视觉结果时使用。",
+                    "description": "生成一张图片。需要保留用户上传的原图主体时，use_references 必须为 true：第一张图的主体会被蒙版锁住，只替换背景，不会重画主体。",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "prompt": { "type": "string", "description": "完整的画面描述" },
+                            "prompt": { "type": "string", "description": "要替换的人物、服装、背景和构图。保留原图时不要重写主体的颜色和形状。" },
                             "size": {
                                 "type": "string",
                                 "enum": ["1024x1024", "1024x1792", "1792x1024"],
                                 "description": "画幅，不确定时用 1024x1024"
+                            },
+                            "use_references": {
+                                "type": "boolean",
+                                "description": "为 true 时锁定最近一条带图消息的第一张图，只编辑背景。需要保留这张原图时必须为 true；不需要原图时为 false。"
                             }
                         },
                         "required": ["prompt"]
@@ -370,13 +374,13 @@ pub fn tool_definitions(image_ready: bool, extra: Vec<Value>) -> Vec<Value> {
 
 pub fn system_message(prompt: &str, skills: &[(String, String)], image_ready: bool) -> String {
     let image_note = if image_ready {
-        "当用户希望得到图像、海报、插画、照片或视觉稿时，调用 generate_image。生成后用简短的话说明画面，不要声称还没画就已经看到了文件。"
+        "当用户希望得到图像、海报、插画、照片或视觉稿时，调用 generate_image。用户上传了图片并要求保留原图主体时，use_references 必须为 true。此时第一张图的主体会被蒙版锁住，只替换背景，不要在提示词里要求重画主体。工具若说明无法分离主体或接口不接受蒙版，就停止，不要改用纯文字重新生成。不要声称颜色已经和原图核对一致。生成后用简短的话说明画面，不要声称还没画就已经看到了文件。"
     } else {
         "当前没有配置生图模型。如果用户要图片，直接说明需要先在设置里填写生图模型，不要假装已经生成。"
     };
     let mut text = format!("{prompt}\n\n{image_note}");
     if !skills.is_empty() {
-        text.push_str("\n\n以下是用户启用的技能，请遵守其中的指令。");
+        text.push_str("\n\n以下是用户启用的技能。只在当前任务符合该技能写明的适用场景时遵守，不要把某个技能套到无关请求上。");
         for (name, content) in skills {
             text.push_str("\n\n## ");
             text.push_str(name);

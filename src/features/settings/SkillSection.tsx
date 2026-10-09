@@ -1,17 +1,20 @@
 import { useEffect, useState } from "react"
-import { Plus, Trash2, Upload } from "lucide-react"
+import { Plus, SquarePen, Trash2, Upload } from "lucide-react"
 import { Button } from "@/components/ui/Button"
+import { EditorModal } from "@/components/ui/EditorModal"
 import { Field } from "@/components/ui/Field"
 import { SettingsBlock, SettingsStack } from "@/features/settings/SettingsBlock"
 import { t } from "@/i18n"
 import { api } from "@/lib/api"
 import { errorText } from "@/lib/platform"
+import { toast } from "@/lib/toast"
 import type { Skill } from "@/lib/types"
 
 export function SkillSection() {
   const [items, setItems] = useState<Skill[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [editing, setEditing] = useState<Skill | null>(null)
   const [formKey, setFormKey] = useState(0)
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -32,6 +35,7 @@ export function SkillSection() {
     const content = await file.text()
     const name = file.name.replace(/\.md$/i, "")
     await api.createSkill(name, content)
+    toast(t("saved"))
     load()
   }
 
@@ -44,16 +48,24 @@ export function SkillSection() {
       {items.map((item) => (
         <article key={item.id} className="glass-inset grid gap-3 rounded-[28px] p-5">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="font-display text-xl">{item.name}</h2>
+            <button type="button" className="min-w-0 flex-1 truncate text-left font-display text-xl" onClick={() => setEditing(item)}>{item.name}</button>
             <div className="flex gap-2">
               <Button onClick={() => void api.setSkillEnabled(item.id, !item.enabled).then(load)}>
                 {item.enabled ? t("active") : t("activate")}
               </Button>
               <button
                 type="button"
+                className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-foam transition hover:bg-white/16"
+                aria-label={t("edit")}
+                onClick={() => setEditing(item)}
+              >
+                <SquarePen size={16} className="shrink-0" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
                 className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-rose/20 text-rose transition hover:bg-rose/30"
                 aria-label={t("delete")}
-                onClick={() => void api.deleteSkill(item.id).then(load)}
+                onClick={() => void api.deleteSkill(item.id).then(() => { if (editing?.id === item.id) setEditing(null); load() })}
               >
                 <Trash2 size={16} className="shrink-0" aria-hidden="true" />
               </button>
@@ -63,6 +75,22 @@ export function SkillSection() {
         </article>
       ))}
       </div>
+      {editing ? (
+        <EditorModal
+          title={editing.name}
+          nameLabel={t("skillName")}
+          contentLabel={t("skillContent")}
+          name={editing.name}
+          content={editing.content}
+          onClose={() => setEditing(null)}
+          onSubmit={async (name, content) => {
+            await api.updateSkill(editing.id, name, content)
+            toast(t("saved"))
+            setEditing(null)
+            load()
+          }}
+        />
+      ) : null}
       <SettingsBlock>
       <p className="text-sm leading-6 text-foam/65">{t("skillHint")}</p>
       <div>
@@ -100,6 +128,7 @@ export function SkillSection() {
           void api.createSkill(name, content).then(() => {
             setFormKey((value) => value + 1)
             setFormError(null)
+            toast(t("saved"))
             load()
           }).catch((reason) => setFormError(errorText(reason, t("actionFailed"))))
         }}

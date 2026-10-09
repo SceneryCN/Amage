@@ -30,6 +30,7 @@ export const api = {
   activatePrompt: (id: string) => call<void>("activate_prompt", { id }),
   listSkills: () => call<Skill[]>("list_skills"),
   createSkill: (name: string, content: string) => call<Skill>("create_skill", { input: { name, content } }),
+  updateSkill: (id: string, name: string, content: string) => call<void>("update_skill", { input: { id, name, content } }),
   setSkillEnabled: (id: string, enabled: boolean) => call<void>("set_skill_enabled", { input: { id, enabled } }),
   deleteSkill: (id: string) => call<void>("delete_skill", { id }),
   listMcp: () => call<McpServer[]>("list_mcp"),
@@ -89,6 +90,11 @@ async function mockCall<T>(command: string, args: Record<string, unknown>): Prom
     case "create_skill": {
       const input = args.input as { name: string; content: string }
       return store.createSkill(input.name, input.content) as T
+    }
+    case "update_skill": {
+      const input = args.input as { id: string; name: string; content: string }
+      store.updateSkill(input.id, input.name, input.content)
+      return undefined as T
     }
     case "set_skill_enabled": {
       const input = args.input as { id: string; enabled: boolean }

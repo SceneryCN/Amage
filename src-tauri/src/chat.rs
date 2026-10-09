@@ -1,4 +1,5 @@
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
+use base64::Engine;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -98,8 +99,8 @@ pub fn send(app: &AppHandle, input: SendInput) -> Result<SendStarted, String> {
     if content.chars().count() > 32_000 {
         return Err("这条消息太长了".into());
     }
-    if input.attachments.len() > 4 {
-        return Err("一次最多四张图片".into());
+    if input.attachments.len() > 8 {
+        return Err("一次最多八张图片".into());
     }
     let files = decode_attachments(&input.attachments)?;
     let state = app.state::<AppState>();
@@ -312,6 +313,11 @@ enum Outcome {
     Cancelled,
 }
 
+struct Drawn {
+    path: String,
+    attached: usize,
+}
+
 async fn generate(
     app: &AppHandle,
     token: &CancellationToken,
@@ -461,27 +467,45 @@ async fn generate(
                 if image_count > 3 {
                     Err("这一轮生成的图片已经够多了".into())
                 } else {
-                    draw_image(app, &http, &base, &settings, &arguments, &mut images).await
+                    draw_image(
+                        app,
+                        &http,
+                        &base,
+                        &settings,
+                        &arguments,
+                        &latest_user_image_paths(&history),
+                        &mut images,
+                    )
+                    .await
+                    .map(|(path, attached)| Drawn { path, attached })
                 }
             } else {
-                call_mcp(app, &exposed, &name, arguments).await
+                call_mcp(app, &exposed, &name, arguments)
+                    .await
+                    .map(|text| Drawn { path: text, attached: 0 })
             };
             if name == "generate_image" {
-                if let Ok(path) = &result {
+                if let Ok(drawn) = &result {
                     emit(
                         app,
                         &ChatEvent::Image {
                             conversation_id: conversation_id.to_string(),
                             message_id: assistant_id.to_string(),
-                            path: path.clone(),
+                            path: drawn.path.clone(),
                         },
                     );
                     persist(app, assistant_id, &visible, &images, "streaming", None);
                 }
             }
             let tool_content = match &result {
-                Ok(path) if name == "generate_image" => format!("图片已生成并展示给用户。文件：{path}"),
-                Ok(text) => text.clone(),
+                Ok(drawn) if name == "generate_image" && drawn.attached > 0 => format!(
+                    "图片已生成并展示给用户。第一张参考图的主体像素已用蒙版锁住，只替换了背景，没有重画主体。如果成图里的主体颜色或形状变了，就是接口没有遵守蒙版，不能当成原图替换。文件：{}",
+                    drawn.path
+                ),
+                Ok(drawn) if name == "generate_image" => {
+                    format!("图片已生成并展示给用户。本次没有附上实拍参考图。文件：{}", drawn.path)
+                }
+                Ok(drawn) => drawn.path.clone(),
                 Err(err) => format!("工具失败：{err}"),
             };
             api_messages.push(json!({
@@ -535,8 +559,9 @@ async fn draw_image(
     base: &str,
     settings: &db::SettingsDto,
     arguments: &Value,
+    reference_paths: &[String],
     images: &mut Vec<String>,
-) -> Result<String, String> {
+) -> Result<(String, usize), String> {
     let prompt = arguments["prompt"].as_str().unwrap_or("").trim().to_string();
     if prompt.is_empty() {
         return Err("生图提示词是空的".into());
@@ -547,7 +572,40 @@ async fn draw_image(
     } else {
         "1024x1024"
     };
-    let bytes = request_image(http, base, settings.api_key.trim(), settings.image_model.trim(), &prompt, size).await?;
+    let use_references = arguments["use_references"].as_bool().unwrap_or(!reference_paths.is_empty());
+    let (bytes, attached) = if use_references {
+        if reference_paths.is_empty() {
+            return Err("这一轮没有用户上传的图片，无法按参考图生成".into());
+        }
+        let files = read_references(reference_paths)?;
+        let Some(base_image) = files.into_iter().next() else {
+            return Err("这一轮没有用户上传的图片，无法按参考图生成".into());
+        };
+        let mask = protect_subject_mask(&base_image)?;
+        let bytes = request_edit(
+            http,
+            base,
+            settings.api_key.trim(),
+            settings.image_model.trim(),
+            &prompt,
+            size,
+            base_image,
+            mask,
+        )
+        .await?;
+        (bytes, 1)
+    } else {
+        let bytes = request_image(
+            http,
+            base,
+            settings.api_key.trim(),
+            settings.image_model.trim(),
+            &prompt,
+            size,
+        )
+        .await?;
+        (bytes, 0)
+    };
     let path = write_image(&images_dir(app)?, &bytes, "png")?;
     let (width, height) = image_size(&bytes);
     let state = app.state::<AppState>();
@@ -556,7 +614,23 @@ async fn draw_image(
         db::remember_generated(&conn, &path, width, height, bytes.len() as i64)?;
     }
     images.push(path.clone());
-    Ok(path)
+    Ok((path, attached))
+}
+
+fn latest_user_image_paths(history: &[db::MessageDto]) -> Vec<String> {
+    history
+        .iter()
+        .rev()
+        .find(|message| message.role == "user" && !message.images.is_empty())
+        .map(|message| message.images.iter().take(8).cloned().collect())
+        .unwrap_or_default()
+}
+
+fn read_references(paths: &[String]) -> Result<Vec<Vec<u8>>, String> {
+    paths
+        .iter()
+        .map(|path| std::fs::read(path).map_err(|err| format!("读取参考图失败：{err}")))
+        .collect()
 }
 
 async fn request_image(
@@ -586,12 +660,65 @@ async fn request_image(
         .map_err(|err| format!("生图请求失败：{err}"))?;
     let status = response.status();
     let body = response.text().await.map_err(|err| err.to_string())?;
+    image_bytes_from_body(http, status, body).await
+}
+
+async fn request_edit(
+    http: &reqwest::Client,
+    base: &str,
+    key: &str,
+    model: &str,
+    prompt: &str,
+    size: &str,
+    image_bytes: Vec<u8>,
+    mask: Vec<u8>,
+) -> Result<Vec<u8>, String> {
+    if model.is_empty() {
+        return Err("还没有填写生图模型".into());
+    }
+    let mime = image_mime(&image_bytes);
+    let image_part = reqwest::multipart::Part::bytes(image_bytes)
+        .file_name(format!("source.{}", image_extension(mime)))
+        .mime_str(mime)
+        .map_err(|err| format!("参考图格式无法提交：{err}"))?;
+    let mask_part = reqwest::multipart::Part::bytes(mask)
+        .file_name("mask.png")
+        .mime_str("image/png")
+        .map_err(|err| format!("蒙版无法提交：{err}"))?;
+    let form = reqwest::multipart::Form::new()
+        .text("model", model.to_string())
+        .text("prompt", prompt.to_string())
+        .text("size", size.to_string())
+        .text("response_format", "b64_json")
+        .part("image", image_part)
+        .part("mask", mask_part);
+    let response = http
+        .post(format!("{base}/images/edits"))
+        .bearer_auth(key)
+        .header("user-agent", "Amage/0.1")
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|err| format!("参考图生图请求失败：{err}"))?;
+    let status = response.status();
+    let body = response.text().await.map_err(|err| err.to_string())?;
+    if status.as_u16() == 404 || status.as_u16() == 405 {
+        return Err("生图接口不接受参考图，已停止生成，避免在需要参考图时只用文字生成。".into());
+    }
+    image_bytes_from_body(http, status, body).await
+}
+
+async fn image_bytes_from_body(
+    http: &reqwest::Client,
+    status: reqwest::StatusCode,
+    body: String,
+) -> Result<Vec<u8>, String> {
     if !status.is_success() {
         return Err(openai::api_error(status, &body));
     }
     let value: Value = serde_json::from_str(&body).map_err(|err| err.to_string())?;
     if let Some(encoded) = value["data"][0]["b64_json"].as_str() {
-        return STANDARD.decode(encoded).map_err(|err| format!("图片数据无法解析：{err}"));
+        return decode_image_b64(encoded);
     }
     if let Some(url) = value["data"][0]["url"].as_str() {
         let downloaded = http.get(url).send().await.map_err(|err| format!("下载图片失败：{err}"))?;
@@ -601,6 +728,132 @@ async fn request_image(
         return downloaded.bytes().await.map(|bytes| bytes.to_vec()).map_err(|err| err.to_string());
     }
     Err("生图接口没有返回图片".into())
+}
+
+fn protect_subject_mask(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let image = image::load_from_memory(bytes).map_err(|_| "参考图无法读取，已停止，避免重新生成主体。".to_string())?;
+    let rgba = image.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    if width < 8 || height < 8 {
+        return Err("参考图太小，无法分离主体和背景。".into());
+    }
+    let mut samples = Vec::new();
+    for x in (0..width).step_by(4) {
+        samples.push(rgb(rgba.get_pixel(x, 0)));
+        samples.push(rgb(rgba.get_pixel(x, height - 1)));
+    }
+    for y in (0..height).step_by(4) {
+        samples.push(rgb(rgba.get_pixel(0, y)));
+        samples.push(rgb(rgba.get_pixel(width - 1, y)));
+    }
+    let (background, variance) = background_color(&samples);
+    if variance > 2_500 {
+        return Err("参考图边缘不是干净背景，无法锁住原图像素。已停止，避免重新生成主体。".into());
+    }
+    let mut subject = vec![false; (width * height) as usize];
+    let mut kept = 0u64;
+    for (index, pixel) in rgba.pixels().enumerate() {
+        if color_distance(rgb(pixel), background) > 1_600 {
+            subject[index] = true;
+            kept += 1;
+        }
+    }
+    let total = (width as u64) * (height as u64);
+    let ratio = kept as f32 / total as f32;
+    if !(0.05..0.97).contains(&ratio) {
+        return Err("参考图里分不清主体和背景，无法只替换周围。已停止，避免重新生成主体。".into());
+    }
+    let subject = dilate_subject(&subject, width, height);
+    let mut mask = image::RgbaImage::new(width, height);
+    for (index, pixel) in mask.pixels_mut().enumerate() {
+        *pixel = if subject[index] {
+            image::Rgba([255, 255, 255, 255])
+        } else {
+            image::Rgba([0, 0, 0, 0])
+        };
+    }
+    let mut encoded = Vec::new();
+    image::DynamicImage::ImageRgba8(mask)
+        .write_to(&mut std::io::Cursor::new(&mut encoded), image::ImageFormat::Png)
+        .map_err(|err| format!("蒙版没有做成：{err}"))?;
+    Ok(encoded)
+}
+
+fn rgb(pixel: &image::Rgba<u8>) -> [u8; 3] {
+    [pixel.0[0], pixel.0[1], pixel.0[2]]
+}
+
+fn color_distance(left: [u8; 3], right: [u8; 3]) -> u32 {
+    let red = u32::from(left[0].abs_diff(right[0]));
+    let green = u32::from(left[1].abs_diff(right[1]));
+    let blue = u32::from(left[2].abs_diff(right[2]));
+    red * red + green * green + blue * blue
+}
+
+fn background_color(samples: &[[u8; 3]]) -> ([u8; 3], u32) {
+    let count = samples.len().max(1) as u64;
+    let mut sum = [0u64; 3];
+    for sample in samples {
+        sum[0] += u64::from(sample[0]);
+        sum[1] += u64::from(sample[1]);
+        sum[2] += u64::from(sample[2]);
+    }
+    let mean = [(sum[0] / count) as u8, (sum[1] / count) as u8, (sum[2] / count) as u8];
+    let variance = samples.iter().map(|sample| u64::from(color_distance(*sample, mean))).sum::<u64>() / count;
+    (mean, variance as u32)
+}
+
+fn dilate_subject(subject: &[bool], width: u32, height: u32) -> Vec<bool> {
+    let mut expanded = subject.to_vec();
+    for y in 0..height {
+        for x in 0..width {
+            let index = (y * width + x) as usize;
+            if subject[index] {
+                continue;
+            }
+            let mut near = false;
+            for offset_y in -1i32..=1 {
+                for offset_x in -1i32..=1 {
+                    let next_x = x as i32 + offset_x;
+                    let next_y = y as i32 + offset_y;
+                    if next_x < 0 || next_y < 0 || next_x >= width as i32 || next_y >= height as i32 {
+                        continue;
+                    }
+                    if subject[(next_y as u32 * width + next_x as u32) as usize] {
+                        near = true;
+                    }
+                }
+            }
+            if near {
+                expanded[index] = true;
+            }
+        }
+    }
+    expanded
+}
+
+fn image_mime(bytes: &[u8]) -> &'static str {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        "image/png"
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        "image/jpeg"
+    } else if bytes.starts_with(b"GIF8") {
+        "image/gif"
+    } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        "image/webp"
+    } else {
+        "application/octet-stream"
+    }
+}
+
+fn image_extension(mime: &str) -> &'static str {
+    match mime {
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        _ => "bin",
+    }
 }
 
 async fn call_mcp(app: &AppHandle, exposed: &[ExposedTool], name: &str, arguments: Value) -> Result<String, String> {
@@ -879,4 +1132,106 @@ fn write_image(dir: &std::path::Path, bytes: &[u8], extension: &str) -> Result<S
 
 fn emit(app: &AppHandle, event: &ChatEvent) {
     let _ = app.emit("chat", event);
+}
+
+fn decode_image_b64(encoded: &str) -> Result<Vec<u8>, String> {
+    let trimmed = encoded.trim();
+    let payload = match trimmed.split_once(',') {
+        Some((head, body)) if head.contains("base64") => body,
+        _ => trimmed,
+    };
+    let compact: String = payload.chars().filter(|ch| !ch.is_whitespace()).collect();
+    for engine in [&STANDARD, &STANDARD_NO_PAD, &URL_SAFE, &URL_SAFE_NO_PAD] {
+        if let Ok(bytes) = engine.decode(compact.as_bytes()) {
+            if !bytes.is_empty() {
+                return Ok(bytes);
+            }
+        }
+    }
+    Err("生图接口返回的数据无法解析成图片".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{decode_image_b64, latest_user_image_paths};
+    use crate::db::MessageDto;
+    use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+    use base64::Engine;
+
+    fn message(role: &str, images: Vec<&str>) -> MessageDto {
+        MessageDto {
+            id: role.to_string(),
+            conversation_id: "c".into(),
+            role: role.into(),
+            content: String::new(),
+            images: images.into_iter().map(str::to_string).collect(),
+            status: "complete".into(),
+            error: None,
+            created_at: 0,
+        }
+    }
+
+    #[test]
+    fn reference_images_come_from_the_latest_user_upload() {
+        let history = vec![
+            message("user", vec!["old-a.png", "old-b.png"]),
+            message("assistant", vec!["generated.png"]),
+            message(
+                "user",
+                vec!["1.png", "2.png", "3.png", "4.png", "5.png", "6.png", "7.png", "8.png", "9.png"],
+            ),
+        ];
+        assert_eq!(
+            latest_user_image_paths(&history),
+            vec!["1.png", "2.png", "3.png", "4.png", "5.png", "6.png", "7.png", "8.png"]
+        );
+        assert!(latest_user_image_paths(&[message("user", vec![])]).is_empty());
+    }
+
+    #[test]
+    fn mask_keeps_the_subject_and_opens_the_background() {
+        let mut image = image::RgbaImage::from_pixel(40, 40, image::Rgba([248, 248, 248, 255]));
+        for y in 12..28 {
+            for x in 12..28 {
+                image.put_pixel(x, y, image::Rgba([30, 24, 18, 255]));
+            }
+        }
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(&mut std::io::Cursor::new(&mut encoded), image::ImageFormat::Png)
+            .unwrap();
+        let mask = image::load_from_memory(&super::protect_subject_mask(&encoded).unwrap())
+            .unwrap()
+            .to_rgba8();
+        assert_eq!(mask.get_pixel(1, 1).0[3], 0);
+        assert_eq!(mask.get_pixel(20, 20).0[3], 255);
+    }
+
+    #[test]
+    fn mask_refuses_a_photo_without_a_clean_edge() {
+        let mut image = image::RgbaImage::new(24, 24);
+        for (x, y, pixel) in image.enumerate_pixels_mut() {
+            *pixel = image::Rgba([x.wrapping_mul(11) as u8, y.wrapping_mul(17) as u8, 80, 255]);
+        }
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(&mut std::io::Cursor::new(&mut encoded), image::ImageFormat::Png)
+            .unwrap();
+        assert!(super::protect_subject_mask(&encoded).is_err());
+    }
+
+    #[test]
+    fn reads_image_payloads_the_service_actually_sends() {
+        let raw = b"\x89PNG-sample_image";
+        let standard = STANDARD.encode(raw);
+        assert_eq!(decode_image_b64(&standard).unwrap(), raw);
+        assert_eq!(decode_image_b64(&format!("data:image/png;base64,{standard}")).unwrap(), raw);
+        let broken: String = standard
+            .chars()
+            .enumerate()
+            .flat_map(|(index, ch)| if index > 0 && index % 8 == 0 { vec!['\n', ch] } else { vec![ch] })
+            .collect();
+        assert_eq!(decode_image_b64(&broken).unwrap(), raw);
+        assert_eq!(decode_image_b64(&URL_SAFE_NO_PAD.encode(raw)).unwrap(), raw);
+    }
 }

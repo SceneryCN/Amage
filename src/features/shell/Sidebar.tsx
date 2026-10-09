@@ -11,6 +11,7 @@ export function Sidebar({
   loading,
   error,
   selectedId,
+  runningIds,
   onNewChat,
   onSelect,
   onDelete,
@@ -23,6 +24,7 @@ export function Sidebar({
   loading: boolean
   error: string | null
   selectedId: string | null
+  runningIds: ReadonlySet<string>
   onNewChat: () => void
   onSelect: (id: string) => void
   onDelete: (id: string) => void
@@ -38,7 +40,7 @@ export function Sidebar({
         <span className="shine-text font-display text-2xl tracking-tight">{t("appName")}</span>
       </div>
 
-      <section className="glass flex min-h-0 flex-1 flex-col rounded-[28px]">
+      <section className="glass-surface flex min-h-0 flex-1 flex-col rounded-[28px]">
           <div className="px-3 pb-2 pt-3">
             <Button className="w-full" tone="primary" onClick={onNewChat}>
               <Plus size={16} aria-hidden="true" />
@@ -50,6 +52,7 @@ export function Sidebar({
             loading={loading}
             error={error}
             selectedId={selectedId}
+            runningIds={runningIds}
             onSelect={onSelect}
             onDelete={onDelete}
             onRetry={onRetry}

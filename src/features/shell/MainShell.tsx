@@ -97,6 +97,7 @@ export function MainShell() {
           loading={history.loading}
           error={history.error}
           selectedId={selectedId}
+          runningIds={history.runningIds}
           onNewChat={() => { setSelectedId(null); setPanel("chat") }}
           onSelect={(id) => { setSelectedId(id); setPanel("chat") }}
           onDelete={(id) => {
@@ -109,7 +110,7 @@ export function MainShell() {
           onOpenGallery={() => setPanel("gallery")}
           onOpenSettings={() => setPanel("settings")}
         />
-        <main className="glass flex min-h-0 min-w-0 flex-col rounded-[28px]">
+        <main className="glass-surface flex min-h-0 min-w-0 flex-col rounded-[28px]">
           {loadingSettings ? <div className="m-6 skeleton h-40 rounded-[28px]" /> : null}
           {settingsError ? (
             <div className="m-8 grid max-w-sm gap-3">
@@ -130,10 +131,10 @@ export function MainShell() {
               <GalleryView onClose={() => setPanel("chat")} />
             </motion.div>
           ) : null}
-          {!loadingSettings && !settingsError && settings && panel === "chat" ? (
-            <motion.div key="chat" className="flex min-h-0 min-w-0 flex-1 flex-col" initial={panelMotion.initial} animate={panelMotion.animate} transition={panelMotion.transition}>
+          {!loadingSettings && !settingsError && settings ? (
+            <div className={panel === "chat" ? "flex min-h-0 min-w-0 flex-1 flex-col" : "hidden"} aria-hidden={panel !== "chat"}>
               <ChatPane conversationId={selectedId} title={title} configured={configured} onCreated={setSelectedId} />
-            </motion.div>
+            </div>
           ) : null}
         </main>
       </div>

@@ -157,6 +157,13 @@ pub fn create_skill(state: State<AppState>, input: NamedText) -> Result<SkillDto
     db::create_skill(&conn, &Uuid::new_v4().to_string(), input.name.trim(), input.content.trim())
 }
 
+#[tauri::command]
+pub fn update_skill(state: State<AppState>, input: UpdatePrompt) -> Result<(), String> {
+    validate_named(&input.name, &input.content, 100_000)?;
+    let conn = state.db.lock().map_err(|err| err.to_string())?;
+    db::update_skill(&conn, &input.id, input.name.trim(), input.content.trim())
+}
+
 #[derive(Deserialize)]
 pub struct SkillToggle {
     id: String,

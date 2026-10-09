@@ -59,6 +59,7 @@ pub fn run() {
             commands::activate_prompt,
             commands::list_skills,
             commands::create_skill,
+            commands::update_skill,
             commands::set_skill_enabled,
             commands::delete_skill,
             commands::list_mcp,

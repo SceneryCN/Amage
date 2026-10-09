@@ -46,16 +46,30 @@ export function Aurora() {
       uniforms: { uTime: { value: 0 } },
     })
     const mesh = new Mesh(gl, { geometry: new Triangle(gl), program })
-    const resize = () => renderer.setSize(parent.clientWidth, parent.clientHeight)
+    const start = performance.now()
+    const sized = { w: 0, h: 0 }
+    const paint = (now: number) => {
+      const uniform = program.uniforms.uTime
+      if (uniform) uniform.value = (now - start) * 0.001
+      renderer.render({ scene: mesh })
+    }
+    const resize = () => {
+      const width = parent.clientWidth
+      const height = parent.clientHeight
+      if (width < 1 || height < 1 || (width === sized.w && height === sized.h)) return
+      sized.w = width
+      sized.h = height
+      renderer.setSize(width, height)
+      gl.canvas.style.width = "100%"
+      gl.canvas.style.height = "100%"
+      paint(performance.now())
+    }
     resize()
     const observer = new ResizeObserver(resize)
     observer.observe(parent)
     let frame = 0
-    const start = performance.now()
     const draw = (now: number) => {
-      const uniform = program.uniforms.uTime
-      if (uniform) uniform.value = (now - start) * 0.001
-      renderer.render({ scene: mesh })
+      paint(now)
       if (!reduce) frame = requestAnimationFrame(draw)
     }
     draw(start)

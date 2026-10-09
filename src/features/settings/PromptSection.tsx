@@ -1,18 +1,20 @@
 import { useEffect, useState } from "react"
-import { Check, Plus, Trash2 } from "lucide-react"
+import { Check, Plus, SquarePen, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/Button"
+import { EditorModal } from "@/components/ui/EditorModal"
 import { Field } from "@/components/ui/Field"
 import { SettingsBlock, SettingsStack } from "@/features/settings/SettingsBlock"
 import { t } from "@/i18n"
 import { api } from "@/lib/api"
 import { errorText } from "@/lib/platform"
+import { toast } from "@/lib/toast"
 import type { Prompt } from "@/lib/types"
 
 export function PromptSection() {
   const [items, setItems] = useState<Prompt[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [editing, setEditing] = useState<string | null>(null)
+  const [editing, setEditing] = useState<Prompt | null>(null)
   const [formKey, setFormKey] = useState(0)
   const [nameError, setNameError] = useState<string | null>(null)
 
@@ -29,8 +31,6 @@ export function PromptSection() {
 
   useEffect(() => { load() }, [])
 
-  const selected = items.find((item) => item.id === editing) ?? null
-
   return (
     <SettingsStack>
       {loading ? <div className="skeleton h-24 rounded-3xl" /> : null}
@@ -39,7 +39,7 @@ export function PromptSection() {
       <div className="grid gap-2">
         {items.map((item) => (
           <div key={item.id} className="glass-inset flex items-center gap-3 rounded-[22px] px-4 py-3">
-            <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => setEditing(item.id)}>{item.name}</button>
+            <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => setEditing(item)}>{item.name}</button>
             {item.active ? <span className="shrink-0 text-xs text-copper">{t("active")}</span> : null}
             <Button className="shrink-0" onClick={() => { if (!item.active) void api.activatePrompt(item.id).then(load) }}>
               <Check size={16} aria-hidden="true" />
@@ -47,42 +47,38 @@ export function PromptSection() {
             </Button>
             <button
               type="button"
+              className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-foam transition hover:bg-white/16"
+              aria-label={t("edit")}
+              onClick={() => setEditing(item)}
+            >
+              <SquarePen size={16} className="shrink-0" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
               className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-rose/20 text-rose transition hover:bg-rose/30"
               aria-label={t("delete")}
-              onClick={() => void api.deletePrompt(item.id).then(() => { if (editing === item.id) setEditing(null); load() })}
+              onClick={() => void api.deletePrompt(item.id).then(() => { if (editing?.id === item.id) setEditing(null); load() })}
             >
               <Trash2 size={16} className="shrink-0" aria-hidden="true" />
             </button>
           </div>
         ))}
       </div>
-      {selected ? (
-        <SettingsBlock>
-        <form
-          key={selected.id}
-          className="settings-fields"
-          onSubmit={(event) => {
-            event.preventDefault()
-            const data = new FormData(event.currentTarget)
-            const name = String(data.get("name") ?? "")
-            const content = String(data.get("content") ?? "")
-            if (!name.trim() || !content.trim()) {
-              setNameError(t("writeSomething"))
-              return
-            }
-            setNameError(null)
-            void api.updatePrompt(selected.id, name, content).then(load).catch((reason) => setNameError(errorText(reason, t("actionFailed"))))
+      {editing ? (
+        <EditorModal
+          title={editing.name}
+          nameLabel={t("promptName")}
+          contentLabel={t("promptContent")}
+          name={editing.name}
+          content={editing.content}
+          onClose={() => setEditing(null)}
+          onSubmit={async (name, content) => {
+            await api.updatePrompt(editing.id, name, content)
+            toast(t("saved"))
+            setEditing(null)
+            load()
           }}
-        >
-          <Field className="col-span-full" label={t("promptName")} error={nameError ?? undefined}>
-            <input name="name" className="glass-input" defaultValue={selected.name} />
-          </Field>
-          <Field className="col-span-full" label={t("promptContent")}>
-            <textarea name="content" className="glass-input min-h-40" defaultValue={selected.content} />
-          </Field>
-          <div className="col-span-full"><Button tone="primary" type="submit"><Check size={16} aria-hidden="true" />{t("savePrompt")}</Button></div>
-        </form>
-        </SettingsBlock>
+        />
       ) : null}
       <SettingsBlock>
       <form
@@ -100,11 +96,12 @@ export function PromptSection() {
           void api.createPrompt(name, content).then(() => {
             setFormKey((value) => value + 1)
             setNameError(null)
+            toast(t("saved"))
             load()
           }).catch((reason) => setNameError(errorText(reason, t("actionFailed"))))
         }}
       >
-        <Field className="col-span-full" label={t("promptName")}>
+        <Field className="col-span-full" label={t("promptName")} error={nameError ?? undefined}>
           <input name="name" className="glass-input" />
         </Field>
         <Field className="col-span-full" label={t("promptContent")}>

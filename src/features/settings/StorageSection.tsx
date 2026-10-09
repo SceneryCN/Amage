@@ -31,11 +31,14 @@ export function StorageSection({
   const [limit, setLimit] = useState(settings.cacheLimitGb)
   const [usage, setUsage] = useState<StorageUsage | null>(null)
   const [usageError, setUsageError] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
+  const [retention, setRetention] = useState(settings.historyRetention)
   const [usageKey, setUsageKey] = useState(0)
   const limitRef = useRef(settings.cacheLimitGb)
   const savedLimit = useRef(settings.cacheLimitGb)
+  const savedRetention = useRef(settings.historyRetention)
   const savingRef = useRef(false)
+  const pendingRef = useRef<{ limit: number; retention: HistoryRetention } | null>(null)
+  const timerRef = useRef<number | null>(null)
 
   useEffect(() => {
     let active = true
@@ -55,25 +58,63 @@ export function StorageSection({
   }, [usageKey])
 
   function commit(nextLimit: number, retention: HistoryRetention) {
-    if (savingRef.current) return
-    if (nextLimit === savedLimit.current && retention === settings.historyRetention) return
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+    if (nextLimit === savedLimit.current && retention === savedRetention.current) return
+    if (savingRef.current) {
+      pendingRef.current = { limit: nextLimit, retention }
+      return
+    }
     savingRef.current = true
-    setSaving(true)
     api.saveStorage({ cacheLimitGb: nextLimit, historyRetention: retention })
       .then((next) => {
         savedLimit.current = next.cacheLimitGb
-        limitRef.current = next.cacheLimitGb
-        setLimit(next.cacheLimitGb)
+        savedRetention.current = next.historyRetention
+        if (!pendingRef.current) {
+          limitRef.current = next.cacheLimitGb
+          setLimit(next.cacheLimitGb)
+          setRetention(next.historyRetention)
+        }
         onChange(next)
         toast(t("saved"))
         setUsageKey((value) => value + 1)
       })
-      .catch((reason) => toast(errorText(reason, t("actionFailed")), "error"))
+      .catch((reason) => {
+        if (!pendingRef.current) {
+          limitRef.current = savedLimit.current
+          setLimit(savedLimit.current)
+          setRetention(savedRetention.current)
+        }
+        toast(errorText(reason, t("actionFailed")), "error")
+      })
       .finally(() => {
         savingRef.current = false
-        setSaving(false)
+        const pending = pendingRef.current
+        pendingRef.current = null
+        if (pending) commit(pending.limit, pending.retention)
       })
   }
+
+  function scheduleLimit(next: number) {
+    limitRef.current = next
+    setLimit(next)
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current)
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null
+      commit(limitRef.current, savedRetention.current)
+    }, 200)
+  }
+
+  const commitRef = useRef(commit)
+  commitRef.current = commit
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) commitRef.current(limitRef.current, savedRetention.current)
+    }
+  }, [])
 
   return (
     <SettingsStack className="adapt-grid">
@@ -90,20 +131,12 @@ export function StorageSection({
           max={10}
           step={1}
           value={limit}
-          disabled={saving}
           aria-valuemin={1}
           aria-valuemax={10}
           aria-valuenow={limit}
           aria-valuetext={`${limit} GB`}
           className="accent-copper"
-          onChange={(event) => {
-            const next = Number(event.target.value)
-            limitRef.current = next
-            setLimit(next)
-          }}
-          onPointerUp={() => commit(limitRef.current, settings.historyRetention)}
-          onKeyUp={() => commit(limitRef.current, settings.historyRetention)}
-          onBlur={() => commit(limitRef.current, settings.historyRetention)}
+          onChange={(event) => scheduleLimit(Number(event.target.value))}
         />
         <p className="text-sm leading-6 text-foam/60">{t("cacheLimitHint")}</p>
         {usage ? <p className="text-sm text-foam/80">{t("storageUsed", { used: formatBytes(usage.bytes), limit: formatBytes(usage.limitBytes) })}</p> : null}
@@ -117,20 +150,23 @@ export function StorageSection({
       </SettingsBlock>
 
       <SettingsBlock>
-      <div className="grid gap-3" aria-disabled={saving}>
+      <div className="grid gap-3">
         <p className="text-sm">{t("historyRetention")}</p>
         <div role="radiogroup" aria-label={t("historyRetention")} className="grid grid-cols-2 gap-2">
           {RETENTION.map((option) => {
-            const selected = settings.historyRetention === option.value
+            const selected = retention === option.value
             return (
               <button
                 key={option.value}
                 type="button"
                 role="radio"
                 aria-checked={selected}
-                disabled={saving}
                 className={`rounded-2xl px-3 py-3 text-sm transition ${selected ? "bg-white/15 text-foam" : "bg-white/5 text-foam/70 hover:bg-white/10"}`}
-                onClick={() => commit(limitRef.current, option.value)}
+                onClick={() => {
+                  if (option.value === retention) return
+                  setRetention(option.value)
+                  commit(limitRef.current, option.value)
+                }}
               >
                 {t(option.label)}
               </button>

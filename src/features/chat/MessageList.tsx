@@ -108,7 +108,7 @@ export function MessageList({
         onKeyDown={(event) => {
           if (event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home") pinnedRef.current = false
         }}
-        className="h-full overflow-y-auto px-6 py-5"
+        className="h-full overflow-y-auto overscroll-y-contain px-6 py-5"
         style={{ overflowAnchor: "none" }}
         role="log"
         aria-label={t("transcript")}
@@ -163,7 +163,7 @@ const MessageBubble = memo(function MessageBubble({
   const waiting = message.status === "streaming" && message.content.length === 0 && message.activity !== t("drawing")
   return (
     <article
-      className={`max-w-[85%] rounded-[24px] px-4 py-3 ${message.role === "user" ? "self-end bg-copper/18" : "glass"}`}
+      className={`max-w-[85%] rounded-[24px] px-4 py-3 ${message.role === "user" ? "self-end bg-copper/18" : "glass-surface"}`}
     >
       {waiting ? (
         <p className="flex items-center gap-2 text-sm text-foam/70" role="status">

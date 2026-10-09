@@ -5,7 +5,7 @@ import { t } from "@/i18n"
 import { errorText } from "@/lib/platform"
 import { toast } from "@/lib/toast"
 
-const MAX_IMAGES = 4
+const MAX_IMAGES = 8
 
 type Attachment = { id: string; file: File; url: string }
 
@@ -43,9 +43,13 @@ export function Composer({
   function addImages(list: File[]) {
     const images = list.filter((file) => file.type.startsWith("image/") || /\.(png|jpe?g|webp|gif)$/i.test(file.name))
     if (images.length === 0) return
+    const room = MAX_IMAGES - files.length
+    if (images.length > room) toast(t("tooManyImages"))
+    const accepted = images.slice(0, Math.max(room, 0))
+    if (accepted.length === 0) return
     setFiles((current) => [
       ...current,
-      ...images.map((file) => ({ id: crypto.randomUUID(), file, url: URL.createObjectURL(file) })),
+      ...accepted.map((file) => ({ id: crypto.randomUUID(), file, url: URL.createObjectURL(file) })),
     ].slice(0, MAX_IMAGES))
   }
 
