@@ -140,7 +140,7 @@ export function MessageList({
           </div>
         ) : null}
         {!loading && !error ? (
-          <div ref={contentRef} className="mx-auto flex w-full max-w-3xl flex-col items-start gap-4">
+          <div ref={contentRef} className="flex w-full flex-col items-start gap-4">
             {messages.map((message) => (
               <MessageBubble key={message.id} message={message} onPreview={onPreview} onRetryMessage={onRetryMessage} />
             ))}
@@ -176,7 +176,7 @@ const MessageBubble = memo(function MessageBubble({
   const waiting = message.status === "streaming" && message.content.length === 0 && message.activity !== t("drawing")
   return (
     <article
-      className={`max-w-[min(100%,34rem)] rounded-[24px] px-4 py-3 ${message.role === "user" ? "self-end bg-copper/18" : "glass"}`}
+      className={`max-w-[85%] rounded-[24px] px-4 py-3 ${message.role === "user" ? "self-end bg-copper/18" : "glass"}`}
     >
       {waiting ? (
         <p className="flex items-center gap-2 text-sm text-foam/70" role="status">
