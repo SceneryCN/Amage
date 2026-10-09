@@ -1,0 +1,32 @@
+[package]
+name = "amage"
+version = "0.1.0"
+description = "Amage desktop chat and image studio"
+edition = "2021"
+rust-version = "1.77"
+publish = false
+autobins = false
+
+[[bin]]
+name = "Amage"
+path = "src/main.rs"
+
+[lib]
+name = "amage_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+base64 = "0.22"
+futures-util = "0.3"
+reqwest = { version = "0.13", features = ["json", "stream"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2.12", features = ["macos-private-api", "protocol-asset"] }
+thiserror = "2"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
+tokio-util = "0.7"
+uuid = { version = "1", features = ["v4"] }
