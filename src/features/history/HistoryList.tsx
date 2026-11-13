@@ -80,6 +80,8 @@ function HistoryRow({
   onDelete: (id: string) => void
 }) {
   const [armed, setArmed] = useState(false)
+  const disarmTimer = useRef(0)
+  useEffect(() => () => window.clearTimeout(disarmTimer.current), [])
   const deleteClass = armed
     ? "pointer-events-auto bg-rose/25 text-rose opacity-100"
     : running
@@ -105,7 +107,7 @@ function HistoryRow({
           onClick={() => {
             if (!armed) {
               setArmed(true)
-              window.setTimeout(() => setArmed(false), 2500)
+              disarmTimer.current = window.setTimeout(() => setArmed(false), 2500)
               return
             }
             onDelete(item.id)

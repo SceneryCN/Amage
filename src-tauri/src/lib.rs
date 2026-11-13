@@ -27,7 +27,7 @@ pub fn run() {
                 .app_data_dir()
                 .map_err(|err| std::io::Error::other(err.to_string()))?
                 .join("amage.sqlite");
-            let conn = db::open(&db_path).map_err(|err| std::io::Error::other(err))?;
+            let conn = db::open(&db_path).map_err(std::io::Error::other)?;
             let http = reqwest::Client::builder()
                 .connect_timeout(std::time::Duration::from_secs(20))
                 .timeout(std::time::Duration::from_secs(300))

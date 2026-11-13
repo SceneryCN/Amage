@@ -1,64 +1,69 @@
 import { motion } from "motion/react"
-import { useEffect, useState } from "react"
-import { Aurora } from "@/components/glass/Aurora"
+import type { CSSProperties } from "react"
 import { BlurText } from "@/components/glass/BlurText"
-import { LogoMark } from "@/components/glass/LogoMark"
+import { DecryptedText } from "@/components/reactbits/DecryptedText"
+import { Particles } from "@/components/reactbits/Particles"
+import { ApertureMark } from "@/features/startup/components/ApertureMark"
+import { STARTUP_INTRO_MS, useStartupService } from "@/features/startup/useStartupService"
+import { creditEnter, hairline, markEnter, rise, shockwave, stageIdle, stageLeave, TAGLINE_DELAY_S, TITLE_DELAY_MS } from "@/features/startup/styles/motion"
 import { t } from "@/i18n"
+import "@/features/startup/styles/startup.css"
 
-const EASE = [0.22, 1, 0.36, 1] as const
-
+/**
+ * 启动动画：盖在主界面之上的一层，按 useStartupService 的阶段推进。
+ *
+ * 分层从下到上：暗场背景 → 粒子（WebGL）→ 噪点 → 舞台（标志、标题、标语、署名）
+ * → 底部进度线与跳过提示。退场时整个覆盖层被 CSS 光圈遮罩“挖空”，主界面从中心露出。
+ */
 export function StartupOverlay() {
-  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  const [phase, setPhase] = useState<"show" | "leave" | "gone">(reduce ? "gone" : "show")
-
-  useEffect(() => {
-    if (reduce) return
-    const leave = window.setTimeout(() => setPhase("leave"), 2600)
-    const done = window.setTimeout(() => setPhase("gone"), 3100)
-    return () => {
-      window.clearTimeout(leave)
-      window.clearTimeout(done)
-    }
-  }, [reduce])
-
+  const { phase, settled, enter } = useStartupService()
   if (phase === "gone") return null
+  const leaving = phase === "leave"
 
   return (
-    <motion.div
-      className={`fixed inset-0 z-40 flex items-center justify-center bg-ink ${phase === "leave" ? "pointer-events-none" : ""}`}
+    <div
+      className="startup-overlay"
+      data-phase={phase}
       role="status"
       aria-label={t("startupLabel")}
-      initial={{ opacity: 1 }}
-      animate={{ opacity: phase === "leave" ? 0 : 1 }}
-      transition={{ duration: 0.45, ease: EASE }}
+      onPointerDown={enter}
+      style={{ "--startup-intro": `${STARTUP_INTRO_MS}ms` } as CSSProperties}
     >
-      <Aurora />
-      <div className="pointer-events-none relative z-10 grid justify-items-center gap-5">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.92, filter: "blur(16px)" }}
-          animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-          transition={{ duration: 0.7, ease: EASE }}
-        >
-          <LogoMark className="h-16 w-16" />
+      <div className="startup-backdrop" />
+      <Particles warp={leaving} count={560} baseSize={150} introSeconds={1.6} />
+      <div className="startup-grain" />
+      {leaving ? <div className="startup-rim" /> : null}
+
+      <motion.div className="startup-stage" initial={false} animate={leaving ? stageLeave : stageIdle}>
+        <motion.div className="startup-mark" {...markEnter}>
+          <span className="startup-orb" />
+          <motion.span className="startup-shockwave" {...shockwave} />
+          <ApertureMark leaving={leaving} />
         </motion.div>
-        <BlurText text={t("appName")} className="shine-text font-display text-6xl tracking-tight" />
-        <motion.p
-          className="text-sm tracking-[0.22em] text-foam/70"
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.85, duration: 0.45 }}
-        >
-          {t("tagline")}
-        </motion.p>
-        <motion.p
-          className="text-xs tracking-[0.16em] text-foam/50"
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 1.15, duration: 0.45 }}
-        >
-          {t("createdBy")}
-        </motion.p>
-      </div>
-    </motion.div>
+
+        <motion.h1 className="startup-title" {...rise(TITLE_DELAY_MS / 1000 - 0.1)}>
+          <DecryptedText text={t("appName")} delay={TITLE_DELAY_MS} speed={110} encryptedClassName="startup-cipher" />
+        </motion.h1>
+
+        <BlurText text={t("tagline")} className="startup-tagline" delay={TAGLINE_DELAY_S} />
+
+        <div className="startup-credit-row">
+          <motion.span className="startup-hairline" data-side="left" {...hairline("right")} />
+          <motion.span className="startup-credit shine-text" {...creditEnter}>
+            {t("createdBy")}
+          </motion.span>
+          <motion.span className="startup-hairline" data-side="right" {...hairline("left")} />
+        </div>
+      </motion.div>
+
+      {leaving ? null : (
+        <>
+          <div className="startup-progress" aria-hidden="true" />
+          <p className="startup-hint" data-settled={settled || undefined}>
+            {settled ? t("startupEnter") : t("startupSkip")}
+          </p>
+        </>
+      )}
+    </div>
   )
 }

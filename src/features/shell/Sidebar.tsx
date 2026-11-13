@@ -35,9 +35,12 @@ export function Sidebar({
 }) {
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-3">
-      <div className="glass flex h-16 shrink-0 items-center justify-center gap-3 rounded-[28px]">
-        <LogoMark />
-        <span className="shine-text font-display text-2xl tracking-tight">{t("appName")}</span>
+      <div className="glass brand-card flex h-16 shrink-0 items-center gap-3 rounded-[28px] px-4">
+        <LogoMark className="h-9 w-9 shrink-0" />
+        <span className="grid min-w-0 leading-tight">
+          <span className="shine-text font-display text-xl font-semibold tracking-tight">{t("appName")}</span>
+          <span className="truncate text-[11px] tracking-[0.18em] text-foam/45">{t("tagline")}</span>
+        </span>
       </div>
 
       <section className="glass-surface flex min-h-0 flex-1 flex-col rounded-[28px]">

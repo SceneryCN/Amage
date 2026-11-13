@@ -94,7 +94,7 @@ impl McpManager {
         for server in self.servers.values() {
             let tools = server.tools.lock().unwrap_or_else(|err| err.into_inner()).clone();
             for tool in tools {
-                let mut name = sanitize_name(&format!("m_{}_{}", short_id(&server.id), &tool.name));
+                let mut name = sanitize_name(&format!("m_{}_{}", short_id(&server.id), tool.name));
                 if name.len() > 64 {
                     name = name.chars().take(64).collect();
                 }

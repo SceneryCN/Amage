@@ -25,6 +25,12 @@ export function ImagePreview({
   const closeRef = useRef<HTMLButtonElement>(null)
   const drag = useRef<{ px: number; py: number; x: number; y: number } | null>(null)
   const returnFocus = useRef<HTMLElement | null>(null)
+  // 父组件每次渲染都会传入新的 onClose（流式回复时一秒几十次）。放进 ref，
+  // 打开预览时的焦点与滚动锁定只执行一次，不会在回复过程中反复抢焦点。
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  const countRef = useRef(images.length)
+  countRef.current = images.length
   const safeIndex = Math.min(current, Math.max(images.length - 1, 0))
   const src = images[safeIndex]
 
@@ -63,9 +69,9 @@ export function ImagePreview({
       if (event.key === "Escape") {
         event.preventDefault()
         event.stopImmediatePropagation()
-        onClose()
+        onCloseRef.current()
       } else if (event.key === "ArrowRight") {
-        setCurrent((value) => Math.min(value + 1, images.length - 1))
+        setCurrent((value) => Math.min(value + 1, countRef.current - 1))
       } else if (event.key === "ArrowLeft") {
         setCurrent((value) => Math.max(value - 1, 0))
       }
@@ -76,7 +82,7 @@ export function ImagePreview({
       window.removeEventListener("keydown", onKey)
       returnFocus.current?.focus()
     }
-  }, [images.length, onClose])
+  }, [])
 
   useEffect(() => {
     const stage = stageRef.current

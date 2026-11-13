@@ -225,9 +225,7 @@ fn remember_function_call(acc: &mut StreamAcc, index: u32, item: &Value) {
 
 fn apply_responses_output(acc: &mut StreamAcc, value: &Value) -> Option<String> {
     let mut emitted = String::new();
-    let Some(output) = value["output"].as_array() else {
-        return None;
-    };
+    let output = value["output"].as_array()?;
     for (index, item) in output.iter().enumerate() {
         match item["type"].as_str() {
             Some("function_call") => remember_function_call(acc, index as u32, item),

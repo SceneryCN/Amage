@@ -1,11 +1,14 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { ArrowDown, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/Button"
-import { MarkdownText } from "@/features/chat/MarkdownText"
 import { HoverImage } from "@/features/preview/HoverImage"
 import { t } from "@/i18n"
 import { imageSrc } from "@/lib/files"
 import type { UiMessage } from "@/lib/types"
+
+// Markdown 解析器体积较大，而启动时通常是空白新对话；首次出现消息时再加载，
+// 加载完成前先按纯文本显示，内容不会缺失。
+const MarkdownText = lazy(() => import("@/features/chat/MarkdownText").then((module) => ({ default: module.MarkdownText })))
 
 export function MessageList({
   conversationId,
@@ -163,7 +166,7 @@ const MessageBubble = memo(function MessageBubble({
   const waiting = message.status === "streaming" && message.content.length === 0 && message.activity !== t("drawing")
   return (
     <article
-      className={`max-w-[85%] rounded-[24px] px-4 py-3 ${message.role === "user" ? "self-end bg-copper/18" : "glass-surface"}`}
+      className={`max-w-[85%] rounded-[24px] px-4 py-3 ${message.role === "user" ? "bubble-user self-end" : "glass-surface"}`}
     >
       {waiting ? (
         <p className="flex items-center gap-2 text-sm text-foam/70" role="status">
@@ -173,7 +176,11 @@ const MessageBubble = memo(function MessageBubble({
           {t("replying")}
         </p>
       ) : null}
-      {message.content ? <MarkdownText text={message.content} /> : null}
+      {message.content ? (
+        <Suspense fallback={<p className="whitespace-pre-wrap leading-7">{message.content}</p>}>
+          <MarkdownText text={message.content} />
+        </Suspense>
+      ) : null}
       {message.activity && message.activity !== t("drawing") ? <p className="mt-2 text-sm text-sea" aria-live="polite">{message.activity}</p> : null}
       {message.status === "streaming" && message.activity === t("drawing") && message.images.length === 0 ? (
         <DreamImage spaced={message.content.length > 0} />

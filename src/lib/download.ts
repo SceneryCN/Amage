@@ -42,5 +42,6 @@ async function downloadInBrowser(path: string, name: string) {
   link.href = url
   link.download = name
   link.click()
-  URL.revokeObjectURL(url)
+  // 立即释放会让部分浏览器在真正开始下载前丢失 blob。
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

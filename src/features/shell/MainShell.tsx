@@ -1,13 +1,11 @@
-import { useEffect, useState } from "react"
+import { lazy, Suspense, useEffect, useState } from "react"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import { RotateCcw } from "lucide-react"
 import { motion } from "motion/react"
 import { Aurora } from "@/components/glass/Aurora"
 import { Button } from "@/components/ui/Button"
 import { ChatPane } from "@/features/chat/ChatPane"
-import { GalleryView } from "@/features/gallery/GalleryView"
 import { useConversations } from "@/features/history/useConversations"
-import { SettingsView } from "@/features/settings/SettingsView"
 import { Sidebar } from "@/features/shell/Sidebar"
 import { StartupOverlay } from "@/features/startup/StartupOverlay"
 import { t } from "@/i18n"
@@ -19,6 +17,11 @@ import type { Settings } from "@/lib/types"
 type Panel = "chat" | "settings" | "gallery"
 
 const EASE = [0.22, 1, 0.36, 1] as const
+
+// 设置与图库不在首屏，按需加载，缩小启动时需要解析的脚本体积。
+const SettingsView = lazy(() => import("@/features/settings/SettingsView").then((module) => ({ default: module.SettingsView })))
+const GalleryView = lazy(() => import("@/features/gallery/GalleryView").then((module) => ({ default: module.GalleryView })))
+const panelFallback = <div className="m-6 skeleton h-40 rounded-[28px]" />
 
 export function MainShell() {
   const history = useConversations()
@@ -59,7 +62,8 @@ export function MainShell() {
       } else if (meta && event.key === ",") {
         event.preventDefault()
         setPanel("settings")
-      } else if (event.key === "Escape" && panel !== "chat" && !document.querySelector("[data-preview-open]")) {
+      } else if (event.key === "Escape" && panel !== "chat" && !event.defaultPrevented && !document.querySelector("[data-preview-open]")) {
+        // 弹窗会先在 document 上 preventDefault 并关闭自己；这里跳过，避免同一次 Esc 把设置页也退掉。
         setPanel("chat")
       }
     }
@@ -80,6 +84,7 @@ export function MainShell() {
   return (
     <div className="relative h-full overflow-hidden bg-ink">
       <Aurora />
+      <div className="app-grain" aria-hidden="true" />
       <div
         data-tauri-drag-region
         className="window-drag absolute inset-x-0 top-0 z-30 h-10"
@@ -123,12 +128,16 @@ export function MainShell() {
           ) : null}
           {!loadingSettings && !settingsError && settings && panel === "settings" ? (
             <motion.div key="settings" className="flex min-h-0 min-w-0 flex-1 flex-col" initial={panelMotion.initial} animate={panelMotion.animate} transition={panelMotion.transition}>
-              <SettingsView settings={settings} onChange={setSettings} onClose={() => setPanel("chat")} />
+              <Suspense fallback={panelFallback}>
+                <SettingsView settings={settings} onChange={setSettings} onClose={() => setPanel("chat")} />
+              </Suspense>
             </motion.div>
           ) : null}
           {!loadingSettings && !settingsError && panel === "gallery" ? (
             <motion.div key="gallery" className="flex min-h-0 min-w-0 flex-1 flex-col" initial={panelMotion.initial} animate={panelMotion.animate} transition={panelMotion.transition}>
-              <GalleryView onClose={() => setPanel("chat")} />
+              <Suspense fallback={panelFallback}>
+                <GalleryView onClose={() => setPanel("chat")} />
+              </Suspense>
             </motion.div>
           ) : null}
           {!loadingSettings && !settingsError && settings ? (

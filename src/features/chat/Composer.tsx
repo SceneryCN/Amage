@@ -3,6 +3,7 @@ import { ImagePlus, SendHorizontal, Square } from "lucide-react"
 import { Button } from "@/components/ui/Button"
 import { t } from "@/i18n"
 import { errorText } from "@/lib/platform"
+import { trackSpotlight } from "@/lib/spotlight"
 import { toast } from "@/lib/toast"
 
 const MAX_IMAGES = 8
@@ -86,11 +87,7 @@ export function Composer({
       <form
         onSubmit={(event) => void submit(event)}
         className={`composer glass relative overflow-hidden rounded-[28px] p-3 ${dragging ? "ring-1 ring-copper" : ""}`}
-        onPointerMove={(event) => {
-          const rect = event.currentTarget.getBoundingClientRect()
-          event.currentTarget.style.setProperty("--spot-x", `${event.clientX - rect.left}px`)
-          event.currentTarget.style.setProperty("--spot-y", `${event.clientY - rect.top}px`)
-        }}
+        onPointerMove={trackSpotlight}
         onDragEnter={(event) => {
           if (!acceptsFiles(event)) return
           event.preventDefault()
@@ -115,11 +112,7 @@ export function Composer({
           addImages([...(event.dataTransfer.files ?? [])])
         }}
       >
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0"
-          style={{ background: "radial-gradient(180px circle at var(--spot-x, 50%) var(--spot-y, 40%), rgba(227, 154, 85, 0.18), transparent 70%)" }}
-        />
+        <div aria-hidden="true" className="spotlight-layer" />
         <div className="relative">
         {dragging ? <p className="px-2 pb-2 text-xs text-copper">{t("dropImages")}</p> : null}
         {files.length > 0 ? (
