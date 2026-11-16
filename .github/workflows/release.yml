@@ -1,12 +1,23 @@
+# 打包 Windows x64 与 macOS Apple Silicon（M 系列芯片）安装包，并上传到一个草稿 Release。
+#
+# 触发方式（两种任选）：
+# 1. GitHub 仓库 → Actions → release → Run workflow（手动运行）；
+# 2. 推送版本标签，例如：git tag v1.0.0 && git push origin v1.0.0
+#
+# 版本号取自 src-tauri/tauri.conf.json 的 version，Release 标签为 v<version>。
+# 同一版本重复运行时，安装包会上传到同一个草稿 Release；在网页上确认后再点“发布”。
 name: release
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - release
     tags:
       - "v*"
+
+# 同一分支或标签上只保留最新一次打包，避免两次运行同时往一个 Release 传文件。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   publish:
@@ -16,47 +27,52 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS 签名在 src-tauri/tauri.macos.conf.json，用 ad-hoc identity "-"。
-          - platform: macos-latest
-            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
-            args: "--target aarch64-apple-darwin"
-          - platform: macos-latest
-            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
-            args: "--target x86_64-apple-darwin"
-          - platform: windows-latest
-            rust_targets: x86_64-pc-windows-msvc
-            args: "--target x86_64-pc-windows-msvc"
+          # macos-latest 是 Apple Silicon 运行器；签名配置在 src-tauri/tauri.macos.conf.json（ad-hoc "-"）。
+          - name: macOS Apple Silicon
+            platform: macos-latest
+            target: aarch64-apple-darwin
+          - name: Windows x64
+            platform: windows-latest
+            target: x86_64-pc-windows-msvc
 
+    name: ${{ matrix.name }}
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v7
 
+      # 不写 version：pnpm 版本读取 package.json 的 packageManager，与本地保持一致。
+      - name: setup pnpm
+        uses: pnpm/action-setup@v6
+
       - name: setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: lts/*
-          cache: npm
+          cache: pnpm
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.rust_targets }}
+          targets: ${{ matrix.target }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: "./src-tauri -> target"
+          key: ${{ matrix.target }}
 
       - name: install frontend dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          # 仓库里同时有 pnpm-lock.yaml 和 package-lock.json，显式指定，避免自动识别成 npm。
+          tauriScript: pnpm tauri
           tagName: v__VERSION__
           releaseName: "Amage v__VERSION__"
-          releaseBody: "Windows x64、Apple Silicon 与 Intel 安装包见下方附件。"
+          releaseBody: "Windows x64 与 macOS Apple Silicon（M 系列芯片）安装包见下方附件。"
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }}
+          args: --target ${{ matrix.target }}
