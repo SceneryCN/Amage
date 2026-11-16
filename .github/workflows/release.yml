@@ -1,11 +1,17 @@
-# 打包 Windows x64 与 macOS Apple Silicon（M 系列芯片）安装包，并上传到一个草稿 Release。
+# 手动打包并直接发布 Release：macOS Apple Silicon（M 系列芯片）与 Windows x64。
 #
 # 触发方式（两种任选）：
 # 1. GitHub 仓库 → Actions → release → Run workflow（手动运行）；
-# 2. 推送版本标签，例如：git tag v1.0.0 && git push origin v1.0.0
+# 2. 推送版本标签：git tag v1.0.1 && git push origin v1.0.1
+#    标签需带 v 前缀，且应与 tauri.conf.json 的 version 一致；Release 的标签始终取自 version。
 #
-# 版本号取自 src-tauri/tauri.conf.json 的 version，Release 标签为 v<version>。
-# 同一版本重复运行时，安装包会上传到同一个草稿 Release；在网页上确认后再点“发布”。
+# 流程分三步，保证 Release 公开时安装包已经齐全：
+# 1. create-release：按 src-tauri/tauri.conf.json 的 version 准备 v<version> 的 Release（先保持草稿）；
+# 2. build：两台机器并行打包，各自把安装包上传到这个 Release；
+# 3. publish-release：两边都成功后，把草稿改为正式发布。任何一边失败，Release 保持草稿，不会公开半成品。
+#
+# 同一版本再次运行：标签会移到本次运行的提交上，旧安装包被删除并替换为新构建，
+# 适合“版本号没改、修了点东西重新出包”。想发新版本，先改 tauri.conf.json 里的 version。
 name: release
 
 on:
@@ -14,15 +20,65 @@ on:
     tags:
       - "v*"
 
-# 同一分支或标签上只保留最新一次打包，避免两次运行同时往一个 Release 传文件。
+# 同一时间只跑一次发布，避免两次运行同时改写同一个 Release。
 concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: true
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
 
 jobs:
-  publish:
-    permissions:
-      contents: write
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.release.outputs.id }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: read app version
+        id: version
+        run: echo "tag=v$(node -p "require('./src-tauri/tauri.conf.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: prepare draft release
+        id: release
+        uses: actions/github-script@v9
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        with:
+          script: |
+            const { owner, repo } = context.repo
+            const tag = process.env.TAG
+            const name = `Amage ${tag}`
+            const body = "macOS Apple Silicon（M 系列芯片）与 Windows x64 安装包见下方附件。"
+
+            // 标签已存在时移到本次提交，保证 Release 对应的源码就是这次打包的代码。
+            try {
+              await github.rest.git.updateRef({ owner, repo, ref: `tags/${tag}`, sha: context.sha, force: true })
+              core.info(`moved ${tag} to ${context.sha}`)
+            } catch (error) {
+              if (error.status !== 422 && error.status !== 404) throw error
+            }
+
+            // 已发布的 Release 能按标签查到；草稿只能从列表里找。
+            const releases = await github.paginate(github.rest.repos.listReleases, { owner, repo, per_page: 100 })
+            let release = releases.find((item) => item.tag_name === tag)
+
+            if (release) {
+              for (const asset of release.assets) {
+                await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: asset.id })
+              }
+              release = (await github.rest.repos.updateRelease({ owner, repo, release_id: release.id, name, body, draft: true, prerelease: false })).data
+              core.info(`reusing release ${release.id}, old assets removed`)
+            } else {
+              release = (await github.rest.repos.createRelease({ owner, repo, tag_name: tag, target_commitish: context.sha, name, body, draft: true, prerelease: false })).data
+              core.info(`created release ${release.id}`)
+            }
+            core.setOutput("id", String(release.id))
+
+  build:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -70,9 +126,26 @@ jobs:
         with:
           # 仓库里同时有 pnpm-lock.yaml 和 package-lock.json，显式指定，避免自动识别成 npm。
           tauriScript: pnpm tauri
-          tagName: v__VERSION__
-          releaseName: "Amage v__VERSION__"
-          releaseBody: "Windows x64 与 macOS Apple Silicon（M 系列芯片）安装包见下方附件。"
-          releaseDraft: true
-          prerelease: false
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          tagName: ${{ needs.create-release.outputs.tag }}
           args: --target ${{ matrix.target }}
+
+  publish-release:
+    needs: [create-release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: publish release
+        uses: actions/github-script@v9
+        env:
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+        with:
+          script: |
+            const { owner, repo } = context.repo
+            const release = await github.rest.repos.updateRelease({
+              owner,
+              repo,
+              release_id: Number(process.env.RELEASE_ID),
+              draft: false,
+              make_latest: "true",
+            })
+            core.notice(`published ${release.data.html_url}`)
